@@ -1,0 +1,8 @@
+# Dependencies for vulnerability report parser
+# Pourquoi : Ces bibliothèques permettent de parser les formats JSON/XML
+# Comment : pip install -r requirements.txt
+
+xml.etree.ElementTree  # Inclus dans Python (parsing XML)
+json                    # Inclus dans Python (parsing JSON)
+typing                  # Inclus dans Python (type hints)
+

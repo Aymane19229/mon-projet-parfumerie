@@ -1,0 +1,339 @@
+name: DevSecOps Pipeline
+
+# Pourquoi : Ce pipeline s'exécute automatiquement à chaque push ou pull request
+# Comment : GitHub Actions déclenche ce workflow sur les événements définis ci-dessous
+on:
+  push:
+    branches: [ main, SecOps ]
+  pull_request:
+    branches: [ main ]
+
+# Pourquoi : Définir les permissions nécessaires pour que le workflow puisse exécuter les actions
+# Comment : Ces permissions permettent de lire le code, écrire les résultats, etc.
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  # ============================================
+  # JOB 1: BUILD ET COMPILATION
+  # ============================================
+  build:
+    name: Build Application
+    runs-on: ubuntu-latest
+    
+    # Pourquoi : Utiliser une matrice permet de tester sur plusieurs versions Java si nécessaire
+    # Comment : On peut ajouter plusieurs versions dans la liste java-version
+    strategy:
+      matrix:
+        java-version: [17]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        # Pourquoi : Récupérer le code source depuis le repo
+        # Comment : Action GitHub officielle qui clone le repo dans le runner
+        
+      - name: Set up JDK ${{ matrix.java-version }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.java-version }}
+          distribution: 'temurin'
+        # Pourquoi : Installer Java pour compiler le backend Spring Boot
+        # Comment : Utilise une distribution OpenJDK (Temurin) compatible avec Spring Boot
+        
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+        # Pourquoi : Accélérer les builds en cachant les dépendances Maven
+        # Comment : Si le pom.xml n'a pas changé, réutilise les dépendances déjà téléchargées
+        
+      - name: Build Backend
+        run: |
+          cd backend
+          mvn clean compile
+        # Pourquoi : Compiler le backend pour vérifier qu'il n'y a pas d'erreurs
+        # Comment : Maven compile le code Java et vérifie la syntaxe
+        
+      - name: Build Frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+        # Pourquoi : Compiler le frontend React pour vérifier qu'il n'y a pas d'erreurs
+        # Comment : npm ci installe les dépendances et npm run build compile l'app React
+
+  # ============================================
+  # JOB 2: SAST - Static Application Security Testing
+  # ============================================
+  sast:
+    name: SAST - SonarQube Code Analysis
+    runs-on: ubuntu-latest
+    needs: build
+    # Pourquoi : Exécuter SAST seulement après le build réussi
+    # Comment : Le besoin "needs: build" garantit que le build passe avant SAST
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: 'temurin'
+          
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+      
+      - name: Run SpotBugs (Backend Java SAST)
+        run: |
+          mkdir -p reports/sast
+          cd backend
+          mvn clean compile
+          mvn com.github.spotbugs:spotbugs-maven-plugin:spotbugs -Dspotbugs.outputFormat=xml -Dspotbugs.outputFile=../reports/sast/spotbugs-report.xml || true
+        continue-on-error: true
+        # Pourquoi : SpotBugs est une alternative à SonarQube qui fonctionne sans configuration cloud
+        #   Il détecte les bugs et vulnérabilités dans le code Java :
+        #   - Null pointer exceptions
+        #   - Problèmes de sécurité (weak cryptography, SQL injection, etc.)
+        #   - Bugs logiques
+        # Comment : SpotBugs analyse le bytecode compilé et génère un rapport XML
+        #   C'est open-source et gratuit, contrairement à SonarQube qui nécessite un compte cloud
+        
+      - name: Run SonarQube Scanner (Backend Java) - Optional
+        if: ${{ secrets.SONAR_TOKEN }}
+        uses: sonarsource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY }}
+        with:
+          projectBaseDir: ./backend
+        continue-on-error: true
+        # Pourquoi : SonarQube est plus complet que SpotBugs et s'exécute EN PLUS de SpotBugs
+        #   Analyse le code source Java pour détecter :
+        #   - Vulnérabilités de sécurité (injection SQL, XSS, etc.)
+        #   - Code smells (mauvaises pratiques)
+        #   - Bugs potentiels
+        #   - Métriques (couverture, duplications, dette technique)
+        # Comment : S'exécute seulement si SONAR_TOKEN est configuré dans les secrets GitHub
+        #   Utilise le fichier backend/sonar-project.properties pour la configuration
+        #   Les deux outils (SpotBugs + SonarQube) fonctionnent ensemble pour une meilleure couverture
+      
+      - name: Run ESLint (Frontend JavaScript/React)
+        run: |
+          cd frontend
+          npm ci
+          npm run lint > eslint-report.json 2>&1 || true
+        # Pourquoi : ESLint détecte les problèmes dans le code JavaScript/React :
+        #   - Erreurs de syntaxe
+        #   - Problèmes de sécurité (ex: dangerouslySetInnerHTML)
+        #   - Mauvaises pratiques
+        # Comment : ESLint analyse statiquement le code JS/JSX
+        #   Le rapport est sauvegardé pour être parsé plus tard
+        
+      - name: Save SAST reports
+        run: |
+          mkdir -p reports/sast
+          # Sauvegarder les rapports pour l'étape de parsing
+          if [ -f frontend/eslint-report.json ]; then
+            cp frontend/eslint-report.json reports/sast/eslint-report.json
+          fi
+        # Pourquoi : Centraliser tous les rapports SAST dans un dossier
+        # Comment : Créer une structure de dossiers pour organiser les rapports
+        
+      - name: Upload SAST reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: sast-reports
+          path: reports/sast/
+        if: always()
+        # Pourquoi : Sauvegarder les rapports SAST comme artifacts
+        # Comment : Permet de récupérer les rapports même si le job échoue partiellement
+
+  # ============================================
+  # JOB 3: SCA - Software Composition Analysis
+  # ============================================
+  sca:
+    name: SCA - Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: 'temurin'
+          
+      - name: Run OWASP Dependency-Check (Backend Maven)
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: 'Backend-Parfumerie'
+          path: './backend'
+          format: 'JSON'
+          args: >
+            --enableRetired
+            --enableExperimental
+            --out reports/sca/backend-dependency-check-report.json
+        # Pourquoi : OWASP Dependency-Check analyse les dépendances Maven pour :
+        #   - Détecter les vulnérabilités connues (CVE)
+        #   - Identifier les dépendances obsolètes ou non maintenues
+        #   - Vérifier les licences des dépendances
+        # Comment : Il compare les versions des dépendances avec des bases de données
+        #   de vulnérabilités (NVD, etc.) et génère un rapport JSON
+        continue-on-error: true
+        
+      - name: Run npm audit (Frontend npm)
+        run: |
+          cd frontend
+          npm ci
+          npm audit --json > ../reports/sca/frontend-npm-audit-report.json || true
+        # Pourquoi : npm audit scanne les dépendances npm pour :
+        #   - Trouver les vulnérabilités connues dans les packages
+        #   - Identifier les packages obsolètes
+        # Comment : Utilise la base de données de sécurité npm
+        #   Le format JSON permet de parser les résultats facilement
+        
+      - name: Save SCA reports
+        run: |
+          mkdir -p reports/sca
+          echo "SCA reports saved"
+        # Pourquoi : S'assurer que le dossier existe pour stocker les rapports
+        
+      - name: Upload SCA reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: sca-reports
+          path: reports/sca/
+        if: always()
+        # Pourquoi : Sauvegarder les rapports SCA comme artifacts
+        # Comment : Permet de récupérer les rapports pour l'analyse ultérieure
+
+  # ============================================
+  # JOB 4: DAST - Dynamic Application Security Testing
+  # ============================================
+  dast:
+    name: DAST - OWASP ZAP Security Scan
+    runs-on: ubuntu-latest
+    needs: build
+    # Pourquoi : DAST nécessite que l'application soit démarrée
+    # Comment : On va démarrer l'application puis la scanner
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: 'temurin'
+          
+      - name: Start Backend Application
+        run: |
+          cd backend
+          mvn clean install -DskipTests
+          java -jar target/*.jar &
+          sleep 30  # Attendre que l'application démarre
+        # Pourquoi : Démarrer l'application Spring Boot pour la tester dynamiquement
+        # Comment : Lancer l'app en arrière-plan et attendre qu'elle soit prête
+        continue-on-error: true
+        
+      - name: Run OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.10.0
+        with:
+          target: 'http://localhost:8080'
+          rules_file_name: '.zap/rules.tsv'
+          cmd_options: '-a'
+        # Pourquoi : OWASP ZAP teste l'application EN EXÉCUTION pour :
+        #   - Détecter les vulnérabilités runtime (XSS, SQL injection, etc.)
+        #   - Analyser les réponses HTTP
+        #   - Tester les endpoints API
+        # Comment : ZAP envoie des requêtes HTTP malveillantes et analyse les réponses
+        #   Il génère un rapport XML/JSON avec les vulnérabilités trouvées
+        continue-on-error: true
+        
+      - name: Save DAST reports
+        run: |
+          mkdir -p reports/dast
+          if [ -f zap_report.json ]; then
+            cp zap_report.json reports/dast/zap-report.json
+          fi
+        # Pourquoi : Sauvegarder le rapport ZAP pour l'étape de parsing
+        # Comment : Copier le rapport dans le dossier centralisé
+        
+      - name: Upload DAST reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: dast-reports
+          path: reports/dast/
+        if: always()
+        # Pourquoi : Sauvegarder les rapports DAST comme artifacts
+        # Comment : Permet de récupérer les rapports ZAP pour l'analyse
+
+  # ============================================
+  # JOB 5: COLLECTE DES RAPPORTS
+  # ============================================
+  collect-reports:
+    name: Collect Security Reports
+    runs-on: ubuntu-latest
+    needs: [sast, sca, dast]
+    # Pourquoi : Collecter tous les rapports après l'exécution de tous les scans
+    # Comment : Ce job attend que SAST, SCA et DAST soient terminés
+    
+    if: always()
+    # Pourquoi : Exécuter même si certains jobs échouent (pour récupérer les rapports)
+    # Comment : always() garantit l'exécution indépendamment du résultat
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Download SAST artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: sast-reports
+          path: reports/sast
+        continue-on-error: true
+        # Pourquoi : Récupérer les rapports SAST des jobs précédents
+        # Comment : Les artifacts permettent de partager des fichiers entre jobs
+        
+      - name: Download SCA artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: sca-reports
+          path: reports/sca
+        continue-on-error: true
+        
+      - name: Download DAST artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dast-reports
+          path: reports/dast
+        continue-on-error: true
+        
+      - name: Upload all reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: reports/
+          retention-days: 30
+        # Pourquoi : Centraliser tous les rapports de sécurité pour :
+        #   - L'analyse et le parsing ultérieur
+        #   - L'audit et la conformité
+        #   - La génération de politiques avec LLM
+        # Comment : Les artifacts sont disponibles en téléchargement depuis GitHub
+        #   retention-days garde les rapports 30 jours
+

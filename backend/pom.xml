@@ -113,6 +113,19 @@
 					<encoding>UTF-8</encoding> <!-- Forcer UTF-8 pour toutes les ressources -->
 				</configuration>
 			</plugin>
+
+			<!-- SpotBugs Plugin pour l'analyse statique de sécurité (SAST) -->
+			<plugin>
+				<groupId>com.github.spotbugs</groupId>
+				<artifactId>spotbugs-maven-plugin</artifactId>
+				<version>4.8.3.6</version>
+				<configuration>
+					<!-- Ignorer les erreurs pour ne pas bloquer le build -->
+					<failOnError>false</failOnError>
+					<effort>Max</effort>
+					<threshold>Low</threshold>
+				</configuration>
+			</plugin>
 		</plugins>
 	</build>
 
