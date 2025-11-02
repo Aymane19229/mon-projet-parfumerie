@@ -1,0 +1,37 @@
+POLITIQUE DE SÉCURITÉ - PROTECTION DES SYSTÈMES ET DONNÉES
+Référence NIST CSF : PR.AC - Access Control
+
+1. OBJECTIF
+Cette politique définit les exigences pour le contrôle d'accès aux systèmes, applications et données de l'organisation afin de protéger les ressources contre les accès non autorisés.
+
+2. PORTÉE
+Cette politique s'applique à tous les utilisateurs, systèmes, applications et données de l'organisation.
+
+3. EXIGENCES
+
+3.1 Gestion des Identités
+- Tous les utilisateurs doivent avoir des identités uniques et vérifiables
+- Les identités doivent être créées, modifiées et supprimées selon un processus d'approbation
+- Les comptes inactifs doivent être désactivés après 90 jours d'inactivité
+
+3.2 Authentification
+- L'authentification multi-facteurs (MFA) est requise pour tous les accès privilégiés
+- Les mots de passe doivent respecter les exigences de complexité (minimum 12 caractères, majuscules, minuscules, chiffres, symboles)
+- Les mots de passe doivent être changés tous les 90 jours
+
+3.3 Autorisation
+- L'accès doit être accordé selon le principe du moindre privilège
+- Les permissions doivent être révisées trimestriellement
+- L'accès doit être révoqué immédiatement lors d'un changement de rôle ou de départ
+
+4. RESPONSABILITÉS
+- Direction IT : Implémentation et maintenance des contrôles d'accès
+- Ressources Humaines : Notification des changements d'emploi
+- Utilisateurs : Respect des politiques d'accès
+
+5. CONFORMITÉ
+Cette politique est conforme au NIST Cybersecurity Framework, catégorie PROTECT, fonction PR.AC (Protect - Identity Management and Access Control).
+
+6. RÉVISION
+Cette politique sera révisée annuellement ou en cas de changement significatif.
+

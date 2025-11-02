@@ -1,0 +1,10 @@
+# Dépendances pour le module d'évaluation
+# Note: BLEU et ROUGE-L sont implémentés manuellement pour éviter les dépendances lourdes
+
+# Optionnel: Pour améliorations futures
+# nltk>=3.8.1
+# sacrebleu>=2.3.1
+# rouge-score>=0.1.2
+
+# Pas de dépendances externes nécessaires - tout est implémenté en Python pur
+

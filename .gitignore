@@ -24,3 +24,21 @@ reports/
 !package-lock.json
 eslint-report.json
 zap_report.json
+
+# API Keys et secrets (NE JAMAIS VERSIONNER !)
+.env
+llm/.env
+**/.env
+*.env
+.env.local
+.env.*.local
+
+# Python cache et fichiers compilés
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Rapports d'évaluation (générés)
+evaluation/evaluation_report.json

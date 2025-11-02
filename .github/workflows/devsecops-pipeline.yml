@@ -108,25 +108,18 @@ jobs:
         # Comment : SpotBugs analyse le bytecode compilé et génère un rapport XML
         #   C'est open-source et gratuit, contrairement à SonarQube qui nécessite un compte cloud
         
-      - name: Run SonarQube Scanner (Backend Java) - Optional
-        if: ${{ secrets.SONAR_TOKEN }}
-        uses: sonarsource/sonarqube-scan-action@master
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-          SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY }}
-        with:
-          projectBaseDir: ./backend
-        continue-on-error: true
-        # Pourquoi : SonarQube est plus complet que SpotBugs et s'exécute EN PLUS de SpotBugs
-        #   Analyse le code source Java pour détecter :
-        #   - Vulnérabilités de sécurité (injection SQL, XSS, etc.)
-        #   - Code smells (mauvaises pratiques)
-        #   - Bugs potentiels
-        #   - Métriques (couverture, duplications, dette technique)
-        # Comment : S'exécute seulement si SONAR_TOKEN est configuré dans les secrets GitHub
-        #   Utilise le fichier backend/sonar-project.properties pour la configuration
-        #   Les deux outils (SpotBugs + SonarQube) fonctionnent ensemble pour une meilleure couverture
+      # SonarQube désactivé - On utilise SpotBugs pour SAST (suffisant pour le projet)
+      # - name: Run SonarQube Scanner (Backend Java) - Optional
+      #   if: ${{ secrets.SONAR_TOKEN }}
+      #   uses: sonarsource/sonarqube-scan-action@master
+      #   env:
+      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      #     SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      #     SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY }}
+      #   with:
+      #     projectBaseDir: ./backend
+      #   continue-on-error: true
+      # Note : SonarQube est optionnel. SpotBugs est suffisant pour détecter les vulnérabilités SAST.
       
       - name: Run ESLint (Frontend JavaScript/React)
         run: |

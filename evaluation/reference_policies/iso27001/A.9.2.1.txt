@@ -1,0 +1,43 @@
+POLITIQUE DE SÉCURITÉ - GESTION DES ACCÈS DES UTILISATEURS
+Référence ISO/IEC 27001 : A.9.2.1 - User access management
+
+1. OBJECTIF
+Assurer un accès approprié et contrôlé aux systèmes d'information et aux services de l'organisation.
+
+2. PORTÉE
+Cette politique s'applique à tous les utilisateurs internes et externes ayant accès aux systèmes d'information.
+
+3. PRINCIPES
+
+3.1 Attribution des Droits d'Accès
+- Tous les utilisateurs doivent avoir des identifiants uniques (ID utilisateur)
+- Les demandes d'accès doivent être approuvées par le responsable hiérarchique
+- Les droits d'accès doivent correspondre aux besoins professionnels de l'utilisateur
+
+3.2 Gestion des Identifiants
+- Les identifiants doivent être créés uniquement après autorisation formelle
+- Les identifiants doivent être uniques et ne pas être partagés
+- Les identifiants temporaires doivent avoir une date d'expiration définie
+
+3.3 Révision des Droits d'Accès
+- Les droits d'accès de tous les utilisateurs doivent être révisés annuellement
+- Les révisions doivent documenter les changements d'accès
+- Les accès inutiles doivent être révoqués immédiatement
+
+3.4 Suppression des Accès
+- Les accès doivent être désactivés immédiatement lors du départ d'un employé
+- Les accès temporaires doivent être supprimés à l'expiration de leur validité
+- Un processus de vérification doit confirmer la suppression effective
+
+4. RESPONSABILITÉS
+- Responsable Sécurité : Définition et maintenance de la politique
+- Direction IT : Implémentation technique des contrôles
+- Ressources Humaines : Notification des changements de personnel
+- Responsables hiérarchiques : Approbation des demandes d'accès
+
+5. CONFORMITÉ
+Cette politique est conforme à l'ISO/IEC 27001:2022, contrôle A.9.2.1 - User access management.
+
+6. RÉVISION
+Cette politique sera révisée annuellement et après tout incident de sécurité lié à l'accès.
+
