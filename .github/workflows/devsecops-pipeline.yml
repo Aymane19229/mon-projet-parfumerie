@@ -350,6 +350,18 @@ jobs:
     # Pourquoi : DAST nécessite que l'application soit démarrée
     # Comment : On va démarrer l'application puis la scanner
     
+    # Services disponibles (optionnel - pour services externes si nécessaire)
+    # services:
+    #   postgres:
+    #     image: postgres:13
+    #     env:
+    #       POSTGRES_PASSWORD: postgres
+    #     options: >-
+    #       --health-cmd pg_isready
+    #       --health-interval 10s
+    #       --health-timeout 5s
+    #       --health-retries 5
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -426,16 +438,35 @@ jobs:
         # Comment : Lancer l'app en arrière-plan, sauvegarder le PID, et vérifier qu'elle répond
         continue-on-error: true
         
+      - name: Check Docker Availability
+        run: |
+          echo "🐳 Vérification de Docker..."
+          if command -v docker &> /dev/null; then
+            docker --version
+            echo "✅ Docker est disponible"
+            # Vérifier que Docker peut être utilisé
+            docker ps || echo "⚠️  Docker daemon peut ne pas être démarré"
+          else
+            echo "❌ Docker n'est pas installé"
+            echo "⚠️  L'action zaproxy/action-baseline nécessite Docker"
+          fi
+        continue-on-error: true
+        # Pourquoi : Vérifier que Docker est disponible pour ZAP
+        # Comment : L'action zaproxy/action-baseline utilise Docker en interne
+        
       - name: Verify Application is Running
         run: |
           echo "🔍 Vérification que l'application est accessible..."
           if curl -f http://localhost:8080 2>/dev/null; then
             echo "✅ Application accessible sur http://localhost:8080"
           else
-            echo "⚠️  Application non accessible, mais on continue quand même"
+            echo "⚠️  Application non accessible"
+            echo "📋 Tentative de diagnostic..."
+            netstat -tuln | grep 8080 || echo "Port 8080 non utilisé"
             # Créer un rapport vide pour éviter les erreurs
             mkdir -p reports/dast
             echo '{"@version":"2.11.0","site":[]}' > reports/dast/zap-report.json
+            echo "⚠️  Rapport vide créé - l'application n'est pas accessible"
           fi
         continue-on-error: true
         
