@@ -490,7 +490,8 @@ jobs:
             docker pull owasp/zap2docker-stable || echo "⚠️  Impossible de télécharger l'image ZAP"
             
             echo "🚀 Lancement du scan ZAP..."
-            # Utiliser host.docker.internal pour accéder à localhost:8080 depuis le conteneur
+            # Utiliser --network host pour accéder à localhost:8080 depuis le conteneur
+            # Le rapport sera généré dans /zap/wrk/ grâce au volume monté
             docker run --rm \
               --network host \
               -v $(pwd):/zap/wrk/:rw \
@@ -499,19 +500,28 @@ jobs:
               -t http://localhost:8080 \
               -J \
               -a \
-              -r zap-report.json \
+              -r /zap/wrk/zap-report.json \
               -I || {
               echo "⚠️  Scan ZAP échoué, création d'un rapport vide"
               echo '{"@version":"2.11.0","site":[]}' > reports/dast/zap-report.json
             }
             
-            # Copier le rapport si généré
+            # Copier le rapport si généré (le rapport est dans /zap/wrk/ grâce au volume)
             if [ -f zap-report.json ]; then
               cp zap-report.json reports/dast/zap-report.json
               echo "✅ Rapport ZAP généré avec Docker direct"
             elif [ -f /zap/wrk/zap-report.json ]; then
               cp /zap/wrk/zap-report.json reports/dast/zap-report.json
               echo "✅ Rapport ZAP généré (depuis /zap/wrk/)"
+            else
+              # Chercher le rapport dans le répertoire courant (peut être généré ailleurs)
+              FOUND_REPORT=$(find . -name "zap*.json" -o -name "*report*.json" 2>/dev/null | grep -v node_modules | grep -v ".git" | grep -v "eslint" | head -1)
+              if [ -n "$FOUND_REPORT" ]; then
+                cp "$FOUND_REPORT" reports/dast/zap-report.json
+                echo "✅ Rapport ZAP trouvé et copié: $FOUND_REPORT"
+              else
+                echo "⚠️  Aucun rapport ZAP trouvé après le scan"
+              fi
             fi
           else
             echo "⚠️  Docker non disponible, création d'un rapport vide"
@@ -526,8 +536,7 @@ jobs:
         uses: zaproxy/action-baseline@v0.10.0
         with:
           target: 'http://localhost:8080'
-          cmd_options: '-a -J -t 5'
-          report_file: 'zap-report.json'
+          cmd_options: '-a -J -t 5 -r zap-report.json'
         continue-on-error: true
         # Pourquoi : OWASP ZAP teste l'application EN EXÉCUTION pour :
         #   - Détecter les vulnérabilités runtime (XSS, SQL injection, etc.)
@@ -537,7 +546,8 @@ jobs:
         #   -a : Active toutes les règles
         #   -J : Génère un rapport JSON
         #   -t 5 : Timeout de 5 minutes
-        #   report_file : Spécifie le nom du fichier de rapport
+        #   -r zap-report.json : Spécifie le nom du fichier de rapport (dans cmd_options)
+        # Note : report_file n'est pas un paramètre valide de cette action
         # Note : Si cette action échoue (Docker), l'étape précédente peut avoir créé un rapport
         
       - name: Stop Backend Application
