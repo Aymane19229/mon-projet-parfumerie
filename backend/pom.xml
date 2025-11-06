@@ -121,15 +121,31 @@
 			</plugin>
 
 			<!-- SpotBugs Plugin pour l'analyse statique de sécurité (SAST) -->
+			<!-- Note: Si SpotBugs ne fonctionne pas, utiliser PMD comme alternative -->
 			<plugin>
 				<groupId>com.github.spotbugs</groupId>
 				<artifactId>spotbugs-maven-plugin</artifactId>
-				<version>4.7.3.6</version>
+				<version>4.7.3.4</version>
 				<configuration>
 					<!-- Ignorer les erreurs pour ne pas bloquer le build -->
 					<failOnError>false</failOnError>
 					<effort>Max</effort>
 					<threshold>Low</threshold>
+				</configuration>
+			</plugin>
+			
+			<!-- PMD Plugin (Alternative SAST si SpotBugs ne fonctionne pas) -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-pmd-plugin</artifactId>
+				<version>3.21.2</version>
+				<configuration>
+					<failOnError>false</failOnError>
+					<printFailingErrors>true</printFailingErrors>
+					<rulesets>
+						<ruleset>/category/java/security.xml</ruleset>
+						<ruleset>/category/java/bestpractices.xml</ruleset>
+					</rulesets>
 				</configuration>
 			</plugin>
 		</plugins>

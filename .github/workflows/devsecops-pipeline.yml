@@ -98,7 +98,37 @@ jobs:
           mkdir -p reports/sast
           cd backend
           mvn clean compile
-          mvn com.github.spotbugs:spotbugs-maven-plugin:spotbugs -Dspotbugs.outputFormat=xml -Dspotbugs.outputFile=../reports/sast/spotbugs-report.xml || true
+          echo "🔍 Tentative d'exécution de SpotBugs..."
+          # Essayer d'exécuter SpotBugs avec logs détaillés
+          mvn com.github.spotbugs:spotbugs-maven-plugin:spotbugs \
+            -Dspotbugs.outputFormat=xml \
+            -Dspotbugs.outputFile=../reports/sast/spotbugs-report.xml \
+            -X 2>&1 | tee spotbugs.log || {
+            echo "⚠️  SpotBugs a échoué, vérification des logs..."
+            tail -50 spotbugs.log || echo "Aucun log disponible"
+            echo "📋 Vérification de la version du plugin dans pom.xml:"
+            grep -A 5 "spotbugs-maven-plugin" pom.xml || echo "Plugin non trouvé dans pom.xml"
+          }
+          
+          # Vérifier si le rapport a été généré
+          if [ -f ../reports/sast/spotbugs-report.xml ]; then
+            SIZE=$(wc -c < ../reports/sast/spotbugs-report.xml)
+            echo "📋 Taille du rapport SpotBugs: $SIZE bytes"
+            if [ "$SIZE" -lt 200 ]; then
+              echo "⚠️  Rapport SpotBugs très petit, probablement vide"
+              echo "📋 Contenu du rapport:"
+              head -5 ../reports/sast/spotbugs-report.xml || echo "Impossible de lire"
+              echo ""
+              echo "🔄 Tentative avec PMD (alternative SAST)..."
+              # Utiliser PMD comme alternative
+              mvn pmd:pmd -Dpmd.outputFile=../reports/sast/pmd-report.xml 2>&1 | tail -20 || echo "PMD a également échoué"
+            fi
+          else
+            echo "⚠️  Rapport SpotBugs non généré"
+            echo "🔄 Tentative avec PMD (alternative SAST)..."
+            # Utiliser PMD comme alternative
+            mvn pmd:pmd -Dpmd.outputFile=../reports/sast/pmd-report.xml 2>&1 | tail -20 || echo "PMD a également échoué"
+          fi
         continue-on-error: true
         # Pourquoi : SpotBugs est une alternative à SonarQube qui fonctionne sans configuration cloud
         #   Il détecte les bugs et vulnérabilités dans le code Java :
