@@ -609,11 +609,11 @@ jobs:
             echo "🎯 URL cible pour ZAP: $TARGET_URL"
             echo "🐳 Image ZAP utilisée: $ZAP_IMAGE"
             # Exécuter ZAP - le rapport sera dans /zap/wrk/ qui correspond à $(pwd)
-            # Utiliser un utilisateur avec les bonnes permissions
+            # Utiliser le répertoire de travail monté pour éviter les problèmes de permissions
             docker run --rm \
               --network host \
-              --user $(id -u):$(id -g) \
               -v $(pwd):/zap/wrk/:rw \
+              -w /zap/wrk \
               -t "$ZAP_IMAGE" \
               zap-baseline.py \
               -t "$TARGET_URL" \
