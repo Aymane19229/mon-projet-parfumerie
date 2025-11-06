@@ -203,9 +203,10 @@ jobs:
           path: './backend'
           format: 'JSON'
           args: >
+            --out .
             --enableRetired
             --enableExperimental
-            --out .
+            --failOnCVSS 0
         # Pourquoi : OWASP Dependency-Check analyse les dépendances Maven pour :
         #   - Détecter les vulnérabilités connues (CVE)
         #   - Identifier les dépendances obsolètes ou non maintenues
@@ -660,11 +661,17 @@ jobs:
           # Chercher récursivement si pas trouvé
           if [ "$ZAP_FOUND" = false ]; then
             echo "🔍 Recherche récursive du rapport ZAP..."
-            FOUND_FILE=$(find . -name "zap*.json" -o -name "report*.json" 2>/dev/null | grep -v node_modules | grep -v ".git" | grep -v "eslint" | head -1)
+            FOUND_FILE=$(find . -name "zap*.json" -o -name "report*.json" 2>/dev/null | grep -v node_modules | grep -v ".git" | grep -v "eslint" | grep -v "npm" | head -1)
             if [ -n "$FOUND_FILE" ]; then
-              echo "✅ Rapport ZAP trouvé: $FOUND_FILE"
-              cp "$FOUND_FILE" reports/dast/zap-report.json
-              ZAP_FOUND=true
+              # Éviter de copier le fichier sur lui-même
+              if [ "$FOUND_FILE" != "reports/dast/zap-report.json" ] && [ "$FOUND_FILE" != "./reports/dast/zap-report.json" ]; then
+                cp "$FOUND_FILE" reports/dast/zap-report.json
+                echo "✅ Rapport ZAP trouvé et copié: $FOUND_FILE"
+                ZAP_FOUND=true
+              else
+                echo "⚠️  Fichier trouvé mais c'est le même que la destination, ignoré"
+                ZAP_FOUND=true  # Le fichier existe déjà, c'est bon
+              fi
             fi
           fi
           
