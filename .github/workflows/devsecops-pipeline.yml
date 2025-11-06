@@ -442,8 +442,12 @@ jobs:
               exit 1
             fi
             
-            # Vérifier si l'application répond
-            if curl -f http://localhost:8080/actuator/health 2>/dev/null || curl -f http://localhost:8080 2>/dev/null; then
+            # Vérifier si l'application répond (essayer plusieurs méthodes)
+            if curl -f http://127.0.0.1:8080/actuator/health 2>/dev/null || \
+               curl -f http://127.0.0.1:8080 2>/dev/null || \
+               curl -f http://localhost:8080/actuator/health 2>/dev/null || \
+               curl -f http://localhost:8080 2>/dev/null || \
+               curl -f http://[::1]:8080 2>/dev/null; then
               echo "✅ Application démarrée et répond après ${i}s"
               APP_READY=true
               break
@@ -482,12 +486,27 @@ jobs:
       - name: Verify Application is Running
         run: |
           echo "🔍 Vérification que l'application est accessible..."
-          if curl -f http://localhost:8080 2>/dev/null; then
-            echo "✅ Application accessible sur http://localhost:8080"
-          else
-            echo "⚠️  Application non accessible"
-            echo "📋 Tentative de diagnostic..."
-            netstat -tuln | grep 8080 || echo "Port 8080 non utilisé"
+          # Essayer plusieurs méthodes de connexion
+          APP_ACCESSIBLE=false
+          for url in "http://127.0.0.1:8080" "http://localhost:8080" "http://[::1]:8080"; do
+            if curl -f "$url" 2>/dev/null || curl -f "$url/actuator/health" 2>/dev/null; then
+              echo "✅ Application accessible sur $url"
+              APP_ACCESSIBLE=true
+              break
+            fi
+          done
+          
+          if [ "$APP_ACCESSIBLE" = false ]; then
+            echo "⚠️  Application non accessible via curl"
+            echo "📋 Diagnostic détaillé:"
+            echo "   Port 8080:"
+            netstat -tuln | grep 8080 || echo "   Port 8080 non utilisé"
+            echo "   Processus Java:"
+            ps aux | grep java | grep -v grep || echo "   Aucun processus Java trouvé"
+            echo "   Test direct avec wget (si disponible):"
+            wget -q --spider http://localhost:8080 2>&1 || echo "   wget non disponible ou échec"
+            echo "   Test avec telnet (si disponible):"
+            timeout 2 bash -c "</dev/tcp/localhost/8080" 2>&1 || echo "   Connexion TCP échouée"
             # Créer un rapport vide pour éviter les erreurs
             mkdir -p reports/dast
             echo '{"@version":"2.11.0","site":[]}' > reports/dast/zap-report.json
@@ -500,16 +519,32 @@ jobs:
           echo "🔍 Exécution du scan ZAP avec Docker direct..."
           mkdir -p reports/dast
           
-          # Vérifier que l'application est accessible
+          # Vérifier que l'application est accessible (essayer plusieurs méthodes)
           echo "🔍 Vérification de l'accessibilité de l'application..."
-          if ! curl -f http://localhost:8080 2>/dev/null; then
-            echo "⚠️  Application non accessible sur http://localhost:8080"
-            echo "📋 Diagnostic:"
-            netstat -tuln | grep 8080 || echo "Port 8080 non utilisé"
-            ps aux | grep java | head -5 || echo "Aucun processus Java trouvé"
-            echo "⚠️  Création d'un rapport vide"
+          APP_ACCESSIBLE=false
+          for url in "http://127.0.0.1:8080" "http://localhost:8080" "http://[::1]:8080"; do
+            if curl -f "$url" 2>/dev/null || curl -f "$url/actuator/health" 2>/dev/null; then
+              echo "✅ Application accessible sur $url"
+              APP_ACCESSIBLE=true
+              break
+            fi
+          done
+          
+          if [ "$APP_ACCESSIBLE" = false ]; then
+            echo "⚠️  Application non accessible via curl"
+            echo "📋 Diagnostic détaillé:"
+            echo "   Port 8080:"
+            netstat -tuln | grep 8080 || echo "   Port 8080 non utilisé"
+            echo "   Processus Java:"
+            ps aux | grep java | grep -v grep | head -5 || echo "   Aucun processus Java trouvé"
+            echo "   Test TCP direct:"
+            timeout 2 bash -c "</dev/tcp/localhost/8080" 2>&1 && echo "   ✅ Port 8080 répond" || echo "   ❌ Port 8080 ne répond pas"
+            echo ""
+            echo "⚠️  L'application semble démarrée mais ne répond pas aux requêtes HTTP"
+            echo "⚠️  ZAP va quand même essayer de scanner (peut fonctionner)"
+            echo "⚠️  Création d'un rapport vide en cas d'échec"
             echo '{"@version":"2.11.0","site":[]}' > reports/dast/zap-report.json
-            exit 0
+            # Ne pas sortir, continuer quand même - ZAP peut parfois scanner même si curl échoue
           fi
           
           echo "✅ Application accessible, démarrage du scan ZAP..."
@@ -540,16 +575,24 @@ jobs:
           # Exécuter ZAP avec Docker
           # Utiliser --network host pour accéder à localhost:8080 depuis le conteneur
           # Le rapport sera généré dans /zap/wrk/ grâce au volume monté
-          docker run --rm \
-            --network host \
-            -v $(pwd):/zap/wrk/:rw \
-            -t owasp/zap2docker-stable \
-            zap-baseline.py \
-            -t http://localhost:8080 \
-            -J \
-            -a \
-            -r /zap/wrk/zap-report.json \
-            -I 2>&1 | tee zap-scan.log || {
+            # Essayer plusieurs URLs (IPv4, localhost, IPv6)
+            TARGET_URL="http://localhost:8080"
+            if [ "$APP_ACCESSIBLE" = true ]; then
+              # Si on a trouvé une URL qui fonctionne, l'utiliser
+              TARGET_URL="http://127.0.0.1:8080"
+            fi
+            
+            echo "🎯 URL cible pour ZAP: $TARGET_URL"
+            docker run --rm \
+              --network host \
+              -v $(pwd):/zap/wrk/:rw \
+              -t owasp/zap2docker-stable \
+              zap-baseline.py \
+              -t "$TARGET_URL" \
+              -J \
+              -a \
+              -r /zap/wrk/zap-report.json \
+              -I 2>&1 | tee zap-scan.log || {
             echo "⚠️  Scan ZAP terminé avec des erreurs (code: $?)"
             echo "📋 Dernières lignes du log:"
             tail -20 zap-scan.log || echo "Aucun log disponible"
