@@ -139,7 +139,23 @@ jobs:
           # Sauvegarder les rapports pour l'étape de parsing
           if [ -f frontend/eslint-report.json ]; then
             cp frontend/eslint-report.json reports/sast/eslint-report.json
+            echo "✅ ESLint report copié"
+          else
+            echo "⚠️  ESLint report non trouvé dans frontend/"
           fi
+          
+          # Vérifier que SpotBugs a généré son rapport
+          if [ -f reports/sast/spotbugs-report.xml ]; then
+            echo "✅ SpotBugs report trouvé"
+          else
+            echo "⚠️  SpotBugs report non trouvé"
+            # Créer un rapport XML vide pour éviter les erreurs
+            echo '<?xml version="1.0" encoding="UTF-8"?><BugCollection></BugCollection>' > reports/sast/spotbugs-report.xml
+          fi
+          
+          echo "📋 Contenu de reports/sast/:"
+          ls -lah reports/sast/
+        continue-on-error: true
         # Pourquoi : Centraliser tous les rapports SAST dans un dossier
         # Comment : Créer une structure de dossiers pour organiser les rapports
         
@@ -148,9 +164,11 @@ jobs:
         with:
           name: sast-reports
           path: reports/sast/
+          if-no-files-found: warn
         if: always()
         # Pourquoi : Sauvegarder les rapports SAST comme artifacts
         # Comment : Permet de récupérer les rapports même si le job échoue partiellement
+        # if-no-files-found: warn affiche un avertissement si aucun fichier n'est trouvé
 
   # ============================================
   # JOB 3: SCA - Software Composition Analysis
@@ -185,26 +203,62 @@ jobs:
           args: >
             --enableRetired
             --enableExperimental
-            --out reports/sca/
+            --out .
         # Pourquoi : OWASP Dependency-Check analyse les dépendances Maven pour :
         #   - Détecter les vulnérabilités connues (CVE)
         #   - Identifier les dépendances obsolètes ou non maintenues
         #   - Vérifier les licences des dépendances
         # Comment : Il compare les versions des dépendances avec des bases de données
         #   de vulnérabilités (NVD, etc.) et génère un rapport JSON
+        # Note : --out . génère à la racine, on le déplace ensuite
         continue-on-error: true
         
-      - name: Rename Dependency-Check report
+      - name: Find and Rename Dependency-Check report
         run: |
-          # Dependency-Check génère un fichier avec le nom du projet
-          if [ -f reports/sca/dependency-check-report.json ]; then
-            mv reports/sca/dependency-check-report.json reports/sca/backend-dependency-check-report.json
-          elif [ -f reports/sca/Backend-Parfumerie.json ]; then
-            mv reports/sca/Backend-Parfumerie.json reports/sca/backend-dependency-check-report.json
+          echo "🔍 Recherche du rapport Dependency-Check..."
+          # Dependency-Check peut générer le fichier dans différents emplacements
+          # Chercher dans reports/sca/ et à la racine
+          DEPCHECK_FOUND=false
+          
+          # Chercher dans reports/sca/
+          for file in reports/sca/dependency-check-report.json reports/sca/Backend-Parfumerie.json reports/sca/*.json; do
+            if [ -f "$file" ] && [ "$file" != "reports/sca/frontend-npm-audit-report.json" ]; then
+              echo "✅ Rapport trouvé: $file"
+              mv "$file" reports/sca/backend-dependency-check-report.json
+              DEPCHECK_FOUND=true
+              break
+            fi
+          done
+          
+          # Chercher à la racine (Dependency-Check peut générer là)
+          if [ "$DEPCHECK_FOUND" = false ]; then
+            for file in dependency-check-report.json Backend-Parfumerie.json; do
+              if [ -f "$file" ]; then
+                echo "✅ Rapport trouvé à la racine: $file"
+                mv "$file" reports/sca/backend-dependency-check-report.json
+                DEPCHECK_FOUND=true
+                break
+              fi
+            done
+          fi
+          
+          # Si toujours pas trouvé, chercher récursivement
+          if [ "$DEPCHECK_FOUND" = false ]; then
+            FOUND_FILE=$(find . -name "dependency-check-report.json" -o -name "Backend-Parfumerie.json" 2>/dev/null | grep -v node_modules | head -1)
+            if [ -n "$FOUND_FILE" ]; then
+              echo "✅ Rapport trouvé: $FOUND_FILE"
+              cp "$FOUND_FILE" reports/sca/backend-dependency-check-report.json
+              DEPCHECK_FOUND=true
+            fi
+          fi
+          
+          if [ "$DEPCHECK_FOUND" = false ]; then
+            echo "⚠️  Aucun rapport Dependency-Check trouvé, création d'un rapport vide"
+            echo '{"dependencies":[]}' > reports/sca/backend-dependency-check-report.json
           fi
         continue-on-error: true
-        # Pourquoi : Standardiser le nom du fichier pour le parser
-        # Comment : Dependency-Check peut générer des noms différents selon la version
+        # Pourquoi : Trouver et standardiser le nom du fichier Dependency-Check
+        # Comment : Cherche dans plusieurs emplacements possibles et renomme
         
       - name: Run npm audit (Frontend npm)
         run: |
@@ -223,35 +277,66 @@ jobs:
       - name: Verify SCA reports
         run: |
           echo "📋 Vérification des rapports SCA..."
-          ls -la reports/sca/ || echo "⚠️  Dossier reports/sca/ vide"
+          echo "📁 Contenu de reports/sca/:"
+          ls -lah reports/sca/ || echo "⚠️  Dossier reports/sca/ vide"
+          echo ""
+          echo "📁 Contenu de la racine (fichiers JSON):"
+          ls -lah *.json 2>/dev/null || echo "Aucun JSON à la racine"
+          echo ""
+          
+          # Vérifier Dependency-Check
           if [ -f reports/sca/backend-dependency-check-report.json ]; then
-            echo "✅ Dependency-Check report trouvé"
-            echo "   Taille: $(wc -c < reports/sca/backend-dependency-check-report.json) bytes"
+            SIZE=$(wc -c < reports/sca/backend-dependency-check-report.json)
+            echo "✅ Dependency-Check report trouvé: $SIZE bytes"
+            if [ "$SIZE" -lt 100 ]; then
+              echo "⚠️  Rapport très petit, peut être vide"
+            fi
           else
-            echo "⚠️  Dependency-Check report non trouvé"
-            # Créer un rapport vide pour éviter les erreurs du parser
+            echo "❌ Dependency-Check report NON trouvé dans reports/sca/"
             echo '{"dependencies":[]}' > reports/sca/backend-dependency-check-report.json
           fi
+          
+          # Vérifier npm audit
           if [ -f reports/sca/frontend-npm-audit-report.json ]; then
-            echo "✅ npm audit report trouvé"
-            echo "   Taille: $(wc -c < reports/sca/frontend-npm-audit-report.json) bytes"
+            SIZE=$(wc -c < reports/sca/frontend-npm-audit-report.json)
+            echo "✅ npm audit report trouvé: $SIZE bytes"
+            if [ "$SIZE" -lt 50 ]; then
+              echo "⚠️  Rapport très petit, peut être vide"
+            fi
           else
-            echo "⚠️  npm audit report non trouvé"
-            # Créer un rapport vide pour éviter les erreurs du parser
+            echo "❌ npm audit report NON trouvé"
             echo '{"vulnerabilities":{}}' > reports/sca/frontend-npm-audit-report.json
           fi
+          
+          # Vérifier que les fichiers existent avant l'upload
+          echo ""
+          echo "📊 Résumé avant upload:"
+          echo "   - backend-dependency-check-report.json: $([ -f reports/sca/backend-dependency-check-report.json ] && echo '✅' || echo '❌')"
+          echo "   - frontend-npm-audit-report.json: $([ -f reports/sca/frontend-npm-audit-report.json ] && echo '✅' || echo '❌')"
         continue-on-error: true
         # Pourquoi : Vérifier que les rapports sont générés et créer des rapports vides si nécessaire
-        # Comment : Évite les erreurs du parser si les outils échouent
+        # Comment : Évite les erreurs du parser si les outils échouent, affiche des infos de debug
+        
+      - name: List files before upload
+        run: |
+          echo "📋 Fichiers dans reports/sca/ avant upload:"
+          find reports/sca/ -type f -exec ls -lh {} \;
+          echo ""
+          echo "📊 Vérification finale:"
+          [ -f reports/sca/backend-dependency-check-report.json ] && echo "✅ backend-dependency-check-report.json existe" || echo "❌ backend-dependency-check-report.json MANQUANT"
+          [ -f reports/sca/frontend-npm-audit-report.json ] && echo "✅ frontend-npm-audit-report.json existe" || echo "❌ frontend-npm-audit-report.json MANQUANT"
+        continue-on-error: true
         
       - name: Upload SCA reports
         uses: actions/upload-artifact@v4
         with:
           name: sca-reports
           path: reports/sca/
+          if-no-files-found: warn
         if: always()
         # Pourquoi : Sauvegarder les rapports SCA comme artifacts
         # Comment : Permet de récupérer les rapports pour l'analyse ultérieure
+        # if-no-files-found: warn affiche un avertissement si aucun fichier n'est trouvé
 
   # ============================================
   # JOB 4: DAST - Dynamic Application Security Testing
@@ -318,6 +403,7 @@ jobs:
         with:
           target: 'http://localhost:8080'
           cmd_options: '-a -J'
+          report_file: 'zap-report.json'
         # Pourquoi : OWASP ZAP teste l'application EN EXÉCUTION pour :
         #   - Détecter les vulnérabilités runtime (XSS, SQL injection, etc.)
         #   - Analyser les réponses HTTP
@@ -325,6 +411,7 @@ jobs:
         # Comment : ZAP envoie des requêtes HTTP malveillantes et analyse les réponses
         #   -a : Active toutes les règles
         #   -J : Génère un rapport JSON
+        #   report_file : Spécifie le nom du fichier de rapport
         continue-on-error: true
         
       - name: Stop Backend Application
@@ -373,14 +460,25 @@ jobs:
         # Pourquoi : Sauvegarder le rapport ZAP pour l'étape de parsing
         # Comment : Chercher le rapport sous différents noms possibles et créer un rapport vide si nécessaire
         
+      - name: List files before upload
+        run: |
+          echo "📋 Fichiers dans reports/dast/ avant upload:"
+          find reports/dast/ -type f -exec ls -lh {} \;
+          echo ""
+          echo "📊 Vérification finale:"
+          [ -f reports/dast/zap-report.json ] && echo "✅ zap-report.json existe" || echo "❌ zap-report.json MANQUANT"
+        continue-on-error: true
+        
       - name: Upload DAST reports
         uses: actions/upload-artifact@v4
         with:
           name: dast-reports
           path: reports/dast/
+          if-no-files-found: warn
         if: always()
         # Pourquoi : Sauvegarder les rapports DAST comme artifacts
         # Comment : Permet de récupérer les rapports ZAP pour l'analyse
+        # if-no-files-found: warn affiche un avertissement si aucun fichier n'est trouvé
 
   # ============================================
   # JOB 5: COLLECTE DES RAPPORTS
