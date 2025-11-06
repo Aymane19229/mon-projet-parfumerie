@@ -176,12 +176,59 @@ jobs:
             echo "⚠️  ESLint report non trouvé dans frontend/"
           fi
           
-          # Vérifier que SpotBugs a généré son rapport
+          # Chercher le rapport SpotBugs dans plusieurs emplacements possibles
+          echo "🔍 Recherche du rapport SpotBugs..."
+          SPOTBUGS_REPORT=""
+          
+          # 1. Chercher dans reports/sast/ (emplacement spécifié)
           if [ -f reports/sast/spotbugs-report.xml ]; then
-            echo "✅ SpotBugs report trouvé"
-          else
-            echo "⚠️  SpotBugs report non trouvé"
-            # Créer un rapport XML vide pour éviter les erreurs
+            SIZE=$(wc -c < reports/sast/spotbugs-report.xml)
+            if [ "$SIZE" -gt 200 ]; then
+              SPOTBUGS_REPORT="reports/sast/spotbugs-report.xml"
+              echo "✅ SpotBugs report trouvé dans reports/sast/ ($SIZE bytes)"
+            else
+              echo "⚠️  Rapport SpotBugs trouvé mais trop petit ($SIZE bytes), probablement vide"
+            fi
+          fi
+          
+          # 2. Chercher dans backend/target/ (emplacement par défaut de SpotBugs)
+          if [ -z "$SPOTBUGS_REPORT" ] && [ -f backend/target/spotbugsXml.xml ]; then
+            SIZE=$(wc -c < backend/target/spotbugsXml.xml)
+            if [ "$SIZE" -gt 200 ]; then
+              cp backend/target/spotbugsXml.xml reports/sast/spotbugs-report.xml
+              SPOTBUGS_REPORT="reports/sast/spotbugs-report.xml"
+              echo "✅ SpotBugs report trouvé dans backend/target/ et copié ($SIZE bytes)"
+            fi
+          fi
+          
+          # 3. Chercher récursivement dans backend/target/
+          if [ -z "$SPOTBUGS_REPORT" ]; then
+            FOUND=$(find backend/target -name "spotbugs*.xml" -type f 2>/dev/null | head -1)
+            if [ -n "$FOUND" ]; then
+              SIZE=$(wc -c < "$FOUND")
+              if [ "$SIZE" -gt 200 ]; then
+                cp "$FOUND" reports/sast/spotbugs-report.xml
+                SPOTBUGS_REPORT="reports/sast/spotbugs-report.xml"
+                echo "✅ SpotBugs report trouvé: $FOUND et copié ($SIZE bytes)"
+              fi
+            fi
+          fi
+          
+          # 4. Chercher PMD report (alternative)
+          if [ -f backend/target/pmd.xml ]; then
+            SIZE=$(wc -c < backend/target/pmd.xml)
+            if [ "$SIZE" -gt 200 ]; then
+              cp backend/target/pmd.xml reports/sast/pmd-report.xml
+              echo "✅ PMD report trouvé et copié ($SIZE bytes)"
+            fi
+          fi
+          
+          # Si aucun rapport valide trouvé, créer un rapport vide
+          if [ -z "$SPOTBUGS_REPORT" ]; then
+            echo "⚠️  Aucun rapport SpotBugs valide trouvé"
+            echo "📋 Recherche dans backend/target/:"
+            ls -lah backend/target/*.xml 2>/dev/null | head -10 || echo "Aucun XML trouvé dans target/"
+            echo "⚠️  Création d'un rapport XML vide pour éviter les erreurs"
             echo '<?xml version="1.0" encoding="UTF-8"?><BugCollection></BugCollection>' > reports/sast/spotbugs-report.xml
           fi
           
