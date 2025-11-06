@@ -631,7 +631,13 @@ jobs:
           REPORT_FOUND=false
           
           # Attendre un peu pour que le rapport soit écrit
-          sleep 2
+          sleep 3
+          
+          # Vérifier les permissions du répertoire de travail
+          echo "📋 Permissions du répertoire de travail:"
+          ls -ld . || echo "Impossible de lister"
+          echo "📋 Fichiers dans le répertoire courant:"
+          ls -lah *.json 2>/dev/null | head -10 || echo "Aucun JSON trouvé"
           
           # Chercher dans le répertoire courant (volume monté - /zap/wrk/ correspond à $(pwd))
           echo "📁 Recherche dans le répertoire courant..."
