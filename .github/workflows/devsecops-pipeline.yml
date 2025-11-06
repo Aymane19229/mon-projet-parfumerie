@@ -598,6 +598,7 @@ jobs:
             
             echo "🎯 URL cible pour ZAP: $TARGET_URL"
             echo "🐳 Image ZAP utilisée: $ZAP_IMAGE"
+            # Exécuter ZAP - le rapport sera dans /zap/wrk/ qui correspond à $(pwd)
             docker run --rm \
               --network host \
               -v $(pwd):/zap/wrk/:rw \
@@ -606,7 +607,7 @@ jobs:
               -t "$TARGET_URL" \
               -J \
               -a \
-              -r /zap/wrk/zap-report.json \
+              -r zap-report.json \
               -I 2>&1 | tee zap-scan.log || {
             echo "⚠️  Scan ZAP terminé avec des erreurs (code: $?)"
             echo "📋 Dernières lignes du log:"
@@ -617,30 +618,78 @@ jobs:
           echo "🔍 Recherche du rapport ZAP..."
           REPORT_FOUND=false
           
-          # Chercher dans le répertoire courant (volume monté)
+          # Attendre un peu pour que le rapport soit écrit
+          sleep 2
+          
+          # Chercher dans le répertoire courant (volume monté - /zap/wrk/ correspond à $(pwd))
+          echo "📁 Recherche dans le répertoire courant..."
           if [ -f zap-report.json ]; then
-            cp zap-report.json reports/dast/zap-report.json
-            echo "✅ Rapport ZAP trouvé: zap-report.json"
-            REPORT_FOUND=true
-          elif [ -f /zap/wrk/zap-report.json ]; then
-            cp /zap/wrk/zap-report.json reports/dast/zap-report.json
-            echo "✅ Rapport ZAP trouvé: /zap/wrk/zap-report.json"
-            REPORT_FOUND=true
-          else
-            # Chercher récursivement
-            FOUND_REPORT=$(find . -name "zap*.json" -o -name "*report*.json" 2>/dev/null | grep -v node_modules | grep -v ".git" | grep -v "eslint" | grep -v "npm" | head -1)
+            SIZE=$(wc -c < zap-report.json)
+            if [ "$SIZE" -gt 0 ]; then
+              # Éviter de copier sur le même fichier
+              if [ "$(realpath zap-report.json)" != "$(realpath reports/dast/zap-report.json 2>/dev/null || echo '')" ]; then
+                mkdir -p reports/dast
+                cp zap-report.json reports/dast/zap-report.json
+                echo "✅ Rapport ZAP trouvé et copié: zap-report.json ($SIZE bytes)"
+                REPORT_FOUND=true
+              else
+                echo "✅ Rapport ZAP déjà présent: reports/dast/zap-report.json"
+                REPORT_FOUND=true
+              fi
+            fi
+          fi
+          
+          # Chercher dans le répertoire de travail monté
+          if [ "$REPORT_FOUND" = false ]; then
+            echo "📁 Recherche dans /zap/wrk/ (volume monté)..."
+            if [ -f /zap/wrk/zap-report.json ]; then
+              SIZE=$(wc -c < /zap/wrk/zap-report.json)
+              if [ "$SIZE" -gt 0 ]; then
+                mkdir -p reports/dast
+                cp /zap/wrk/zap-report.json reports/dast/zap-report.json
+                echo "✅ Rapport ZAP trouvé: /zap/wrk/zap-report.json ($SIZE bytes)"
+                REPORT_FOUND=true
+              fi
+            fi
+          fi
+          
+          # Chercher récursivement (mais éviter reports/dast/)
+          if [ "$REPORT_FOUND" = false ]; then
+            echo "📁 Recherche récursive..."
+            FOUND_REPORT=$(find . -name "zap*.json" -o -name "*report*.json" 2>/dev/null | \
+              grep -v node_modules | \
+              grep -v ".git" | \
+              grep -v "eslint" | \
+              grep -v "npm" | \
+              grep -v "reports/dast" | \
+              head -1)
             if [ -n "$FOUND_REPORT" ]; then
-              cp "$FOUND_REPORT" reports/dast/zap-report.json
-              echo "✅ Rapport ZAP trouvé et copié: $FOUND_REPORT"
-              REPORT_FOUND=true
+              # Normaliser le chemin pour éviter les problèmes
+              FOUND_REPORT=$(realpath "$FOUND_REPORT" 2>/dev/null || echo "$FOUND_REPORT")
+              DEST_PATH=$(realpath reports/dast/zap-report.json 2>/dev/null || echo "reports/dast/zap-report.json")
+              
+              # Éviter de copier sur le même fichier
+              if [ "$FOUND_REPORT" != "$DEST_PATH" ]; then
+                mkdir -p reports/dast
+                cp "$FOUND_REPORT" reports/dast/zap-report.json
+                SIZE=$(wc -c < reports/dast/zap-report.json)
+                echo "✅ Rapport ZAP trouvé et copié: $FOUND_REPORT ($SIZE bytes)"
+                REPORT_FOUND=true
+              else
+                echo "✅ Rapport ZAP déjà présent: $FOUND_REPORT"
+                REPORT_FOUND=true
+              fi
             fi
           fi
           
           if [ "$REPORT_FOUND" = false ]; then
             echo "⚠️  Aucun rapport ZAP trouvé après le scan"
-            echo "📋 Fichiers JSON trouvés:"
-            find . -name "*.json" 2>/dev/null | grep -v node_modules | grep -v ".git" | head -10 || echo "Aucun fichier JSON trouvé"
+            echo "📋 Fichiers JSON trouvés dans le répertoire courant:"
+            ls -lah *.json 2>/dev/null | head -10 || echo "Aucun JSON à la racine"
+            echo "📋 Fichiers JSON trouvés récursivement:"
+            find . -name "*.json" 2>/dev/null | grep -v node_modules | grep -v ".git" | grep -v "reports/dast" | head -10 || echo "Aucun fichier JSON trouvé"
             echo "⚠️  Création d'un rapport vide"
+            mkdir -p reports/dast
             echo '{"@version":"2.11.0","site":[]}' > reports/dast/zap-report.json
           fi
           
@@ -681,12 +730,13 @@ jobs:
           ls -lah reports/dast/ 2>/dev/null || echo "Dossier reports/dast/ vide"
           echo ""
           
-          # Si le rapport existe déjà dans reports/dast/ (créé par l'alternative Docker)
+          # Si le rapport existe déjà dans reports/dast/ (créé par le scan ZAP)
           if [ -f reports/dast/zap-report.json ]; then
             SIZE=$(wc -c < reports/dast/zap-report.json)
             echo "✅ Rapport ZAP déjà présent dans reports/dast/: $SIZE bytes"
             if [ "$SIZE" -lt 50 ]; then
               echo "⚠️  Rapport très petit, peut être vide"
+              echo "🔍 Recherche d'un autre rapport..."
             else
               echo "✅ Rapport valide, pas besoin de chercher ailleurs"
               exit 0
@@ -719,16 +769,27 @@ jobs:
           # Chercher récursivement si pas trouvé
           if [ "$ZAP_FOUND" = false ]; then
             echo "🔍 Recherche récursive du rapport ZAP..."
-            FOUND_FILE=$(find . -name "zap*.json" -o -name "report*.json" 2>/dev/null | grep -v node_modules | grep -v ".git" | grep -v "eslint" | grep -v "npm" | head -1)
+            FOUND_FILE=$(find . -name "zap*.json" -o -name "*report*.json" 2>/dev/null | \
+              grep -v node_modules | \
+              grep -v ".git" | \
+              grep -v "eslint" | \
+              grep -v "npm" | \
+              grep -v "reports/dast" | \
+              head -1)
             if [ -n "$FOUND_FILE" ]; then
+              # Normaliser les chemins pour éviter les problèmes
+              FOUND_ABS=$(realpath "$FOUND_FILE" 2>/dev/null || echo "$FOUND_FILE")
+              DEST_ABS=$(realpath reports/dast/zap-report.json 2>/dev/null || echo "$(pwd)/reports/dast/zap-report.json")
+              
               # Éviter de copier le fichier sur lui-même
-              if [ "$FOUND_FILE" != "reports/dast/zap-report.json" ] && [ "$FOUND_FILE" != "./reports/dast/zap-report.json" ]; then
+              if [ "$FOUND_ABS" != "$DEST_ABS" ]; then
                 cp "$FOUND_FILE" reports/dast/zap-report.json
-                echo "✅ Rapport ZAP trouvé et copié: $FOUND_FILE"
+                SIZE=$(wc -c < reports/dast/zap-report.json)
+                echo "✅ Rapport ZAP trouvé et copié: $FOUND_FILE ($SIZE bytes)"
                 ZAP_FOUND=true
               else
-                echo "⚠️  Fichier trouvé mais c'est le même que la destination, ignoré"
-                ZAP_FOUND=true  # Le fichier existe déjà, c'est bon
+                echo "✅ Rapport ZAP déjà présent: $FOUND_FILE"
+                ZAP_FOUND=true
               fi
             fi
           fi
