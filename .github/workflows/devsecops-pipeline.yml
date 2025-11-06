@@ -609,10 +609,14 @@ jobs:
             echo "🎯 URL cible pour ZAP: $TARGET_URL"
             echo "🐳 Image ZAP utilisée: $ZAP_IMAGE"
             # Exécuter ZAP - le rapport sera dans /zap/wrk/ qui correspond à $(pwd)
-            # Utiliser le répertoire de travail monté pour éviter les problèmes de permissions
+            # Créer un répertoire avec les bonnes permissions pour ZAP
+            mkdir -p zap-output
+            chmod 777 zap-output
+            
+            # Exécuter ZAP avec root pour éviter les problèmes de permissions
             docker run --rm \
               --network host \
-              -v $(pwd):/zap/wrk/:rw \
+              -v $(pwd)/zap-output:/zap/wrk/:rw \
               -w /zap/wrk \
               -t "$ZAP_IMAGE" \
               zap-baseline.py \
@@ -657,17 +661,19 @@ jobs:
             fi
           fi
           
-          # Chercher dans le répertoire de travail monté
+          # Chercher dans zap-output (si pas encore trouvé)
           if [ "$REPORT_FOUND" = false ]; then
-            echo "📁 Recherche dans /zap/wrk/ (volume monté)..."
-            if [ -f /zap/wrk/zap-report.json ]; then
-              SIZE=$(wc -c < /zap/wrk/zap-report.json)
-              if [ "$SIZE" -gt 0 ]; then
+            echo "📁 Recherche dans zap-output (récursif)..."
+            if find zap-output -name "*.json" -type f 2>/dev/null | head -1 | while read f; do
+              SIZE=$(wc -c < "$f")
+              if [ "$SIZE" -gt 100 ]; then
                 mkdir -p reports/dast
-                cp /zap/wrk/zap-report.json reports/dast/zap-report.json
-                echo "✅ Rapport ZAP trouvé: /zap/wrk/zap-report.json ($SIZE bytes)"
+                cp "$f" reports/dast/zap-report.json
+                echo "✅ Rapport ZAP trouvé: $f ($SIZE bytes)"
                 REPORT_FOUND=true
               fi
+            done; then
+              : # Rapport trouvé
             fi
           fi
           
@@ -709,8 +715,10 @@ jobs:
             find . -name "*.json" 2>/dev/null | grep -v node_modules | grep -v ".git" | grep -v "reports/dast" | head -10 || echo "   Aucun fichier JSON trouvé"
             echo "   Fichiers zap* trouvés:"
             find . -name "zap*" 2>/dev/null | head -10 || echo "   Aucun fichier zap* trouvé"
+            echo "   Contenu de zap-output/:"
+            ls -lah zap-output/ 2>/dev/null || echo "   Répertoire zap-output/ non trouvé"
             echo "   Contenu du log ZAP (dernières lignes):"
-            tail -30 zap-scan.log 2>/dev/null | grep -i "report\|json\|error" || echo "   Aucun log disponible"
+            tail -30 zap-scan.log 2>/dev/null | grep -i "report\|json\|error\|permission" || echo "   Aucun log disponible"
             echo ""
             echo "⚠️  Création d'un rapport vide"
             mkdir -p reports/dast
