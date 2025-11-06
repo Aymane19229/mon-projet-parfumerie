@@ -124,7 +124,7 @@
 			<plugin>
 				<groupId>com.github.spotbugs</groupId>
 				<artifactId>spotbugs-maven-plugin</artifactId>
-				<version>4.8.2.3</version>
+				<version>4.7.3.6</version>
 				<configuration>
 					<!-- Ignorer les erreurs pour ne pas bloquer le build -->
 					<failOnError>false</failOnError>
