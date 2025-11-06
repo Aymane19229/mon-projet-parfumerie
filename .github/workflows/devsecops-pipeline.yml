@@ -470,85 +470,111 @@ jobs:
           fi
         continue-on-error: true
         
-      - name: Run OWASP ZAP Baseline Scan (Alternative - Docker Direct)
-        if: always()
+      - name: Run OWASP ZAP Baseline Scan (Docker Direct)
         run: |
-          echo "🔍 Tentative de scan ZAP avec Docker direct (alternative)..."
+          echo "🔍 Exécution du scan ZAP avec Docker direct..."
           mkdir -p reports/dast
           
           # Vérifier que l'application est accessible
+          echo "🔍 Vérification de l'accessibilité de l'application..."
           if ! curl -f http://localhost:8080 2>/dev/null; then
-            echo "⚠️  Application non accessible, création d'un rapport vide"
+            echo "⚠️  Application non accessible sur http://localhost:8080"
+            echo "📋 Diagnostic:"
+            netstat -tuln | grep 8080 || echo "Port 8080 non utilisé"
+            ps aux | grep java | head -5 || echo "Aucun processus Java trouvé"
+            echo "⚠️  Création d'un rapport vide"
             echo '{"@version":"2.11.0","site":[]}' > reports/dast/zap-report.json
             exit 0
           fi
           
-          # Essayer avec Docker direct si disponible
-          if command -v docker &> /dev/null; then
-            echo "🐳 Exécution de ZAP avec Docker direct..."
-            echo "📥 Téléchargement de l'image ZAP (si nécessaire)..."
-            docker pull owasp/zap2docker-stable || echo "⚠️  Impossible de télécharger l'image ZAP"
-            
-            echo "🚀 Lancement du scan ZAP..."
-            # Utiliser --network host pour accéder à localhost:8080 depuis le conteneur
-            # Le rapport sera généré dans /zap/wrk/ grâce au volume monté
-            docker run --rm \
-              --network host \
-              -v $(pwd):/zap/wrk/:rw \
-              -t owasp/zap2docker-stable \
-              zap-baseline.py \
-              -t http://localhost:8080 \
-              -J \
-              -a \
-              -r /zap/wrk/zap-report.json \
-              -I || {
-              echo "⚠️  Scan ZAP échoué, création d'un rapport vide"
-              echo '{"@version":"2.11.0","site":[]}' > reports/dast/zap-report.json
-            }
-            
-            # Copier le rapport si généré (le rapport est dans /zap/wrk/ grâce au volume)
-            if [ -f zap-report.json ]; then
-              cp zap-report.json reports/dast/zap-report.json
-              echo "✅ Rapport ZAP généré avec Docker direct"
-            elif [ -f /zap/wrk/zap-report.json ]; then
-              cp /zap/wrk/zap-report.json reports/dast/zap-report.json
-              echo "✅ Rapport ZAP généré (depuis /zap/wrk/)"
-            else
-              # Chercher le rapport dans le répertoire courant (peut être généré ailleurs)
-              FOUND_REPORT=$(find . -name "zap*.json" -o -name "*report*.json" 2>/dev/null | grep -v node_modules | grep -v ".git" | grep -v "eslint" | head -1)
-              if [ -n "$FOUND_REPORT" ]; then
-                cp "$FOUND_REPORT" reports/dast/zap-report.json
-                echo "✅ Rapport ZAP trouvé et copié: $FOUND_REPORT"
-              else
-                echo "⚠️  Aucun rapport ZAP trouvé après le scan"
-              fi
-            fi
+          echo "✅ Application accessible, démarrage du scan ZAP..."
+          
+          # Vérifier Docker
+          if ! command -v docker &> /dev/null; then
+            echo "❌ Docker n'est pas disponible"
+            echo '{"@version":"2.11.0","site":[]}' > reports/dast/zap-report.json
+            exit 0
+          fi
+          
+          echo "🐳 Docker disponible: $(docker --version)"
+          
+          # Télécharger l'image ZAP si nécessaire
+          echo "📥 Téléchargement de l'image ZAP (si nécessaire)..."
+          docker pull owasp/zap2docker-stable 2>&1 | tail -5 || {
+            echo "⚠️  Impossible de télécharger l'image ZAP, création d'un rapport vide"
+            echo '{"@version":"2.11.0","site":[]}' > reports/dast/zap-report.json
+            exit 0
+          }
+          
+          echo "🚀 Lancement du scan ZAP..."
+          echo "📋 Configuration:"
+          echo "   - Target: http://localhost:8080"
+          echo "   - Network: host (pour accéder à localhost)"
+          echo "   - Rapport: /zap/wrk/zap-report.json"
+          
+          # Exécuter ZAP avec Docker
+          # Utiliser --network host pour accéder à localhost:8080 depuis le conteneur
+          # Le rapport sera généré dans /zap/wrk/ grâce au volume monté
+          docker run --rm \
+            --network host \
+            -v $(pwd):/zap/wrk/:rw \
+            -t owasp/zap2docker-stable \
+            zap-baseline.py \
+            -t http://localhost:8080 \
+            -J \
+            -a \
+            -r /zap/wrk/zap-report.json \
+            -I 2>&1 | tee zap-scan.log || {
+            echo "⚠️  Scan ZAP terminé avec des erreurs (code: $?)"
+            echo "📋 Dernières lignes du log:"
+            tail -20 zap-scan.log || echo "Aucun log disponible"
+          }
+          
+          # Chercher et copier le rapport
+          echo "🔍 Recherche du rapport ZAP..."
+          REPORT_FOUND=false
+          
+          # Chercher dans le répertoire courant (volume monté)
+          if [ -f zap-report.json ]; then
+            cp zap-report.json reports/dast/zap-report.json
+            echo "✅ Rapport ZAP trouvé: zap-report.json"
+            REPORT_FOUND=true
+          elif [ -f /zap/wrk/zap-report.json ]; then
+            cp /zap/wrk/zap-report.json reports/dast/zap-report.json
+            echo "✅ Rapport ZAP trouvé: /zap/wrk/zap-report.json"
+            REPORT_FOUND=true
           else
-            echo "⚠️  Docker non disponible, création d'un rapport vide"
+            # Chercher récursivement
+            FOUND_REPORT=$(find . -name "zap*.json" -o -name "*report*.json" 2>/dev/null | grep -v node_modules | grep -v ".git" | grep -v "eslint" | grep -v "npm" | head -1)
+            if [ -n "$FOUND_REPORT" ]; then
+              cp "$FOUND_REPORT" reports/dast/zap-report.json
+              echo "✅ Rapport ZAP trouvé et copié: $FOUND_REPORT"
+              REPORT_FOUND=true
+            fi
+          fi
+          
+          if [ "$REPORT_FOUND" = false ]; then
+            echo "⚠️  Aucun rapport ZAP trouvé après le scan"
+            echo "📋 Fichiers JSON trouvés:"
+            find . -name "*.json" 2>/dev/null | grep -v node_modules | grep -v ".git" | head -10 || echo "Aucun fichier JSON trouvé"
+            echo "⚠️  Création d'un rapport vide"
             echo '{"@version":"2.11.0","site":[]}' > reports/dast/zap-report.json
           fi
+          
+          # Vérifier la taille du rapport final
+          if [ -f reports/dast/zap-report.json ]; then
+            SIZE=$(wc -c < reports/dast/zap-report.json)
+            echo "✅ Rapport DAST sauvegardé: reports/dast/zap-report.json"
+            echo "   Taille: $SIZE bytes"
+            if [ "$SIZE" -lt 50 ]; then
+              echo "⚠️  Rapport très petit, peut être vide"
+            fi
+          fi
         continue-on-error: true
-        # Pourquoi : Alternative si l'action zaproxy/action-baseline échoue
+        # Pourquoi : Exécuter ZAP avec Docker directement (plus fiable que l'action GitHub)
         # Comment : Utilise Docker directement pour exécuter ZAP
         # Note : --network host permet d'accéder à localhost:8080 depuis le conteneur
-        
-      - name: Run OWASP ZAP Baseline Scan (Action GitHub)
-        uses: zaproxy/action-baseline@v0.10.0
-        with:
-          target: 'http://localhost:8080'
-          cmd_options: '-a -J -t 5 -r zap-report.json'
-        continue-on-error: true
-        # Pourquoi : OWASP ZAP teste l'application EN EXÉCUTION pour :
-        #   - Détecter les vulnérabilités runtime (XSS, SQL injection, etc.)
-        #   - Analyser les réponses HTTP
-        #   - Tester les endpoints API
-        # Comment : ZAP envoie des requêtes HTTP malveillantes et analyse les réponses
-        #   -a : Active toutes les règles
-        #   -J : Génère un rapport JSON
-        #   -t 5 : Timeout de 5 minutes
-        #   -r zap-report.json : Spécifie le nom du fichier de rapport (dans cmd_options)
-        # Note : report_file n'est pas un paramètre valide de cette action
-        # Note : Si cette action échoue (Docker), l'étape précédente peut avoir créé un rapport
+        # Note : L'action GitHub zaproxy/action-baseline échoue souvent avec Docker, donc on utilise Docker direct uniquement
         
       - name: Stop Backend Application
         if: always()
