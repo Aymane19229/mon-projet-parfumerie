@@ -350,6 +350,22 @@ jobs:
     # Pourquoi : DAST nécessite que l'application soit démarrée
     # Comment : On va démarrer l'application puis la scanner
     
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: parfumerie
+          MYSQL_USER: parfumerie
+          MYSQL_PASSWORD: parfumerie
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+    
     # Services disponibles (optionnel - pour services externes si nécessaire)
     # services:
     #   postgres:
@@ -389,6 +405,11 @@ jobs:
         continue-on-error: true
         
       - name: Start Backend Application
+        env:
+          SPRING_DATASOURCE_URL: jdbc:mysql://localhost:3306/parfumerie
+          SPRING_DATASOURCE_USERNAME: parfumerie
+          SPRING_DATASOURCE_PASSWORD: parfumerie
+          SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
         run: |
           cd backend
           # Trouver le JAR généré
@@ -400,6 +421,9 @@ jobs:
             exit 1
           fi
           echo "🚀 Démarrage de l'application: $JAR_FILE"
+          echo "📋 Configuration MySQL:"
+          echo "   URL: $SPRING_DATASOURCE_URL"
+          echo "   User: $SPRING_DATASOURCE_USERNAME"
           nohup java -jar "$JAR_FILE" > ../app.log 2>&1 &
           APP_PID=$!
           echo $APP_PID > ../app.pid
