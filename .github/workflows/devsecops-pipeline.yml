@@ -503,7 +503,10 @@ jobs:
           # Essayer plusieurs méthodes de connexion
           APP_ACCESSIBLE=false
           for url in "http://127.0.0.1:8080" "http://localhost:8080" "http://[::1]:8080"; do
-            if curl -f "$url" 2>/dev/null || curl -f "$url/actuator/health" 2>/dev/null; then
+            # Tester d'abord /product (route existante) puis /actuator/health puis /
+            if curl -f "$url/product" 2>/dev/null || \
+               curl -f "$url/actuator/health" 2>/dev/null || \
+               curl -f "$url" 2>/dev/null; then
               echo "✅ Application accessible sur $url"
               APP_ACCESSIBLE=true
               break
@@ -537,7 +540,10 @@ jobs:
           echo "🔍 Vérification de l'accessibilité de l'application..."
           APP_ACCESSIBLE=false
           for url in "http://127.0.0.1:8080" "http://localhost:8080" "http://[::1]:8080"; do
-            if curl -f "$url" 2>/dev/null || curl -f "$url/actuator/health" 2>/dev/null; then
+            # Tester d'abord /product (route existante) puis /actuator/health puis /
+            if curl -f "$url/product" 2>/dev/null || \
+               curl -f "$url/actuator/health" 2>/dev/null || \
+               curl -f "$url" 2>/dev/null; then
               echo "✅ Application accessible sur $url"
               APP_ACCESSIBLE=true
               break
