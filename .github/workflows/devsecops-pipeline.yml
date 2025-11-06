@@ -453,10 +453,14 @@ jobs:
             fi
             
             # Vérifier si l'application répond (essayer plusieurs méthodes)
-            if curl -f http://127.0.0.1:8080/actuator/health 2>/dev/null || \
+            # Tester d'abord /product (route existante) puis /actuator/health puis /
+            if curl -f http://127.0.0.1:8080/product 2>/dev/null || \
+               curl -f http://127.0.0.1:8080/actuator/health 2>/dev/null || \
                curl -f http://127.0.0.1:8080 2>/dev/null || \
+               curl -f http://localhost:8080/product 2>/dev/null || \
                curl -f http://localhost:8080/actuator/health 2>/dev/null || \
                curl -f http://localhost:8080 2>/dev/null || \
+               curl -f http://[::1]:8080/product 2>/dev/null || \
                curl -f http://[::1]:8080 2>/dev/null; then
               echo "✅ Application démarrée et répond après ${i}s"
               APP_READY=true
