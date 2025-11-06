@@ -622,7 +622,6 @@ jobs:
               zap-baseline.py \
               -t "$TARGET_URL" \
               -J \
-              -a \
               -r zap-report.json \
               -I 2>&1 | tee zap-scan.log || {
             echo "⚠️  Scan ZAP terminé avec des erreurs (code: $?)"
@@ -645,17 +644,38 @@ jobs:
           
           # Chercher d'abord dans zap-output (répertoire dédié pour ZAP)
           echo "📁 Recherche dans zap-output..."
+          
+          # ZAP avec -a génère plusieurs formats, chercher le JSON
+          JSON_FILE=""
+          
+          # Chercher zap-report.json d'abord
           if [ -f zap-output/zap-report.json ]; then
-            SIZE=$(wc -c < zap-output/zap-report.json)
-            echo "✅ Fichier zap-report.json trouvé dans zap-output: $SIZE bytes"
+            JSON_FILE="zap-output/zap-report.json"
+          # Sinon chercher -a.json (généré par l'option -a)
+          elif [ -f zap-output/-a.json ]; then
+            JSON_FILE="zap-output/-a.json"
+          # Sinon chercher n'importe quel fichier .json dans zap-output
+          else
+            JSON_FILE=$(find zap-output -name "*.json" -type f 2>/dev/null | head -1)
+          fi
+          
+          if [ -n "$JSON_FILE" ] && [ -f "$JSON_FILE" ]; then
+            SIZE=$(wc -c < "$JSON_FILE")
+            echo "✅ Fichier JSON trouvé: $JSON_FILE ($SIZE bytes)"
             if [ "$SIZE" -gt 100 ]; then
               mkdir -p reports/dast
-              cp zap-output/zap-report.json reports/dast/zap-report.json
-              echo "✅ Rapport ZAP trouvé et copié: zap-output/zap-report.json ($SIZE bytes)"
+              cp "$JSON_FILE" reports/dast/zap-report.json
+              echo "✅ Rapport ZAP trouvé et copié: $JSON_FILE -> reports/dast/zap-report.json ($SIZE bytes)"
               REPORT_FOUND=true
             else
-              echo "⚠️  Fichier zap-report.json trop petit ($SIZE bytes), probablement vide"
+              echo "⚠️  Fichier JSON trop petit ($SIZE bytes), probablement vide"
+              echo "📋 Contenu du fichier (premières lignes):"
+              head -5 "$JSON_FILE" || echo "Impossible de lire le fichier"
             fi
+          else
+            echo "⚠️  Aucun fichier JSON trouvé dans zap-output/"
+            echo "📋 Fichiers dans zap-output/:"
+            ls -lah zap-output/ 2>/dev/null || echo "Répertoire zap-output/ non trouvé"
           fi
           
           # Chercher aussi dans le répertoire courant (fallback)
