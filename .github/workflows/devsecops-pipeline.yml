@@ -433,13 +433,23 @@ jobs:
           # Attendre que l'application démarre (vérifier le port 8080)
           echo "⏳ Attente du démarrage de l'application..."
           APP_READY=false
-          for i in {1..60}; do
+          # Attendre plus longtemps (jusqu'à 3 minutes) car l'application peut prendre du temps
+          for i in {1..90}; do
             # Vérifier si le processus est toujours en cours
             if ! kill -0 $APP_PID 2>/dev/null; then
               echo "❌ L'application s'est arrêtée (code de sortie: $?)"
               echo "📋 Logs de l'application:"
               tail -50 ../app.log || echo "Aucun log disponible"
               exit 1
+            fi
+            
+            # Vérifier les logs pour voir si l'application est prête
+            if grep -q "Started ParfumsApplication" ../app.log 2>/dev/null; then
+              echo "✅ Application démarrée selon les logs (après ${i}s)"
+              # Attendre encore un peu pour que l'application soit complètement prête
+              sleep 5
+              APP_READY=true
+              break
             fi
             
             # Vérifier si l'application répond (essayer plusieurs méthodes)
@@ -599,8 +609,10 @@ jobs:
             echo "🎯 URL cible pour ZAP: $TARGET_URL"
             echo "🐳 Image ZAP utilisée: $ZAP_IMAGE"
             # Exécuter ZAP - le rapport sera dans /zap/wrk/ qui correspond à $(pwd)
+            # Utiliser un utilisateur avec les bonnes permissions
             docker run --rm \
               --network host \
+              --user $(id -u):$(id -g) \
               -v $(pwd):/zap/wrk/:rw \
               -t "$ZAP_IMAGE" \
               zap-baseline.py \
@@ -684,10 +696,16 @@ jobs:
           
           if [ "$REPORT_FOUND" = false ]; then
             echo "⚠️  Aucun rapport ZAP trouvé après le scan"
-            echo "📋 Fichiers JSON trouvés dans le répertoire courant:"
-            ls -lah *.json 2>/dev/null | head -10 || echo "Aucun JSON à la racine"
-            echo "📋 Fichiers JSON trouvés récursivement:"
-            find . -name "*.json" 2>/dev/null | grep -v node_modules | grep -v ".git" | grep -v "reports/dast" | head -10 || echo "Aucun fichier JSON trouvé"
+            echo "📋 Diagnostic détaillé:"
+            echo "   Fichiers JSON dans le répertoire courant:"
+            ls -lah *.json 2>/dev/null | head -10 || echo "   Aucun JSON à la racine"
+            echo "   Fichiers JSON trouvés récursivement:"
+            find . -name "*.json" 2>/dev/null | grep -v node_modules | grep -v ".git" | grep -v "reports/dast" | head -10 || echo "   Aucun fichier JSON trouvé"
+            echo "   Fichiers zap* trouvés:"
+            find . -name "zap*" 2>/dev/null | head -10 || echo "   Aucun fichier zap* trouvé"
+            echo "   Contenu du log ZAP (dernières lignes):"
+            tail -30 zap-scan.log 2>/dev/null | grep -i "report\|json\|error" || echo "   Aucun log disponible"
+            echo ""
             echo "⚠️  Création d'un rapport vide"
             mkdir -p reports/dast
             echo '{"@version":"2.11.0","site":[]}' > reports/dast/zap-report.json
