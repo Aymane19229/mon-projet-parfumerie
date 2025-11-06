@@ -560,11 +560,25 @@ jobs:
           
           # Télécharger l'image ZAP si nécessaire
           echo "📥 Téléchargement de l'image ZAP (si nécessaire)..."
-          docker pull owasp/zap2docker-stable 2>&1 | tail -5 || {
-            echo "⚠️  Impossible de télécharger l'image ZAP, création d'un rapport vide"
+          # Essayer plusieurs noms d'images possibles
+          ZAP_IMAGE=""
+          for image in "ghcr.io/zaproxy/zaproxy:stable" "owasp/zap2docker-stable" "owasp/zap2docker-weekly"; do
+            echo "🔍 Tentative avec: $image"
+            if docker pull "$image" 2>&1 | tail -10; then
+              ZAP_IMAGE="$image"
+              echo "✅ Image ZAP téléchargée: $ZAP_IMAGE"
+              break
+            else
+              echo "⚠️  Échec avec $image, essai suivant..."
+            fi
+          done
+          
+          if [ -z "$ZAP_IMAGE" ]; then
+            echo "❌ Impossible de télécharger l'image ZAP avec aucun des noms testés"
+            echo "⚠️  Création d'un rapport vide"
             echo '{"@version":"2.11.0","site":[]}' > reports/dast/zap-report.json
             exit 0
-          }
+          fi
           
           echo "🚀 Lancement du scan ZAP..."
           echo "📋 Configuration:"
@@ -583,10 +597,11 @@ jobs:
             fi
             
             echo "🎯 URL cible pour ZAP: $TARGET_URL"
+            echo "🐳 Image ZAP utilisée: $ZAP_IMAGE"
             docker run --rm \
               --network host \
               -v $(pwd):/zap/wrk/:rw \
-              -t owasp/zap2docker-stable \
+              -t "$ZAP_IMAGE" \
               zap-baseline.py \
               -t "$TARGET_URL" \
               -J \
