@@ -643,37 +643,32 @@ jobs:
           echo "📋 Fichiers dans le répertoire courant:"
           ls -lah *.json 2>/dev/null | head -10 || echo "Aucun JSON trouvé"
           
-          # Chercher dans le répertoire courant (volume monté - /zap/wrk/ correspond à $(pwd))
-          echo "📁 Recherche dans le répertoire courant..."
-          if [ -f zap-report.json ]; then
-            SIZE=$(wc -c < zap-report.json)
-            if [ "$SIZE" -gt 0 ]; then
-              # Éviter de copier sur le même fichier
-              if [ "$(realpath zap-report.json)" != "$(realpath reports/dast/zap-report.json 2>/dev/null || echo '')" ]; then
-                mkdir -p reports/dast
-                cp zap-report.json reports/dast/zap-report.json
-                echo "✅ Rapport ZAP trouvé et copié: zap-report.json ($SIZE bytes)"
-                REPORT_FOUND=true
-              else
-                echo "✅ Rapport ZAP déjà présent: reports/dast/zap-report.json"
-                REPORT_FOUND=true
-              fi
+          # Chercher d'abord dans zap-output (répertoire dédié pour ZAP)
+          echo "📁 Recherche dans zap-output..."
+          if [ -f zap-output/zap-report.json ]; then
+            SIZE=$(wc -c < zap-output/zap-report.json)
+            echo "✅ Fichier zap-report.json trouvé dans zap-output: $SIZE bytes"
+            if [ "$SIZE" -gt 100 ]; then
+              mkdir -p reports/dast
+              cp zap-output/zap-report.json reports/dast/zap-report.json
+              echo "✅ Rapport ZAP trouvé et copié: zap-output/zap-report.json ($SIZE bytes)"
+              REPORT_FOUND=true
+            else
+              echo "⚠️  Fichier zap-report.json trop petit ($SIZE bytes), probablement vide"
             fi
           fi
           
-          # Chercher dans zap-output (si pas encore trouvé)
-          if [ "$REPORT_FOUND" = false ]; then
-            echo "📁 Recherche dans zap-output (récursif)..."
-            if find zap-output -name "*.json" -type f 2>/dev/null | head -1 | while read f; do
-              SIZE=$(wc -c < "$f")
-              if [ "$SIZE" -gt 100 ]; then
-                mkdir -p reports/dast
-                cp "$f" reports/dast/zap-report.json
-                echo "✅ Rapport ZAP trouvé: $f ($SIZE bytes)"
-                REPORT_FOUND=true
-              fi
-            done; then
-              : # Rapport trouvé
+          # Chercher aussi dans le répertoire courant (fallback)
+          if [ "$REPORT_FOUND" = false ] && [ -f zap-report.json ]; then
+            SIZE=$(wc -c < zap-report.json)
+            echo "✅ Fichier zap-report.json trouvé dans le répertoire courant: $SIZE bytes"
+            if [ "$SIZE" -gt 100 ]; then
+              mkdir -p reports/dast
+              cp zap-report.json reports/dast/zap-report.json
+              echo "✅ Rapport ZAP trouvé et copié: zap-report.json ($SIZE bytes)"
+              REPORT_FOUND=true
+            else
+              echo "⚠️  Fichier zap-report.json trop petit ($SIZE bytes), probablement vide"
             fi
           fi
           
