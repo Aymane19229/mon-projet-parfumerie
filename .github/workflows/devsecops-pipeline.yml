@@ -554,33 +554,77 @@ jobs:
       - name: Save DAST reports
         run: |
           mkdir -p reports/dast
+          echo "🔍 Recherche du rapport ZAP..."
+          echo "📁 Fichiers JSON à la racine:"
+          ls -lah *.json 2>/dev/null | head -10 || echo "Aucun JSON trouvé"
+          echo ""
+          echo "📁 Fichiers dans reports/dast/:"
+          ls -lah reports/dast/ 2>/dev/null || echo "Dossier reports/dast/ vide"
+          echo ""
+          
+          # Si le rapport existe déjà dans reports/dast/ (créé par l'alternative Docker)
+          if [ -f reports/dast/zap-report.json ]; then
+            SIZE=$(wc -c < reports/dast/zap-report.json)
+            echo "✅ Rapport ZAP déjà présent dans reports/dast/: $SIZE bytes"
+            if [ "$SIZE" -lt 50 ]; then
+              echo "⚠️  Rapport très petit, peut être vide"
+            else
+              echo "✅ Rapport valide, pas besoin de chercher ailleurs"
+              exit 0
+            fi
+          fi
+          
           # ZAP peut générer le rapport avec différents noms selon la version
           ZAP_FOUND=false
+          
+          # Chercher dans le répertoire courant
           for zap_file in zap_report.json report_json.json zap-baseline-report.json zap_report.xml; do
             if [ -f "$zap_file" ]; then
               echo "✅ Rapport ZAP trouvé: $zap_file"
-              # Si c'est XML, on le convertit en JSON minimal (ou on le garde tel quel)
+              SIZE=$(wc -c < "$zap_file")
+              echo "   Taille: $SIZE bytes"
+              
+              # Si c'est XML, on le convertit en JSON minimal
               if [[ "$zap_file" == *.xml ]]; then
-                echo '{"@version":"2.11.0","site":[]}' > reports/dast/zap-report.json
                 echo "⚠️  Rapport XML détecté, création d'un JSON minimal"
+                echo '{"@version":"2.11.0","site":[]}' > reports/dast/zap-report.json
               else
                 cp "$zap_file" reports/dast/zap-report.json
+                echo "✅ Rapport copié vers reports/dast/zap-report.json"
               fi
               ZAP_FOUND=true
               break
             fi
           done
           
+          # Chercher récursivement si pas trouvé
           if [ "$ZAP_FOUND" = false ]; then
-            # Créer un rapport vide si aucun rapport n'est trouvé
-            echo '{"@version":"2.11.0","site":[]}' > reports/dast/zap-report.json
+            echo "🔍 Recherche récursive du rapport ZAP..."
+            FOUND_FILE=$(find . -name "zap*.json" -o -name "report*.json" 2>/dev/null | grep -v node_modules | grep -v ".git" | grep -v "eslint" | head -1)
+            if [ -n "$FOUND_FILE" ]; then
+              echo "✅ Rapport ZAP trouvé: $FOUND_FILE"
+              cp "$FOUND_FILE" reports/dast/zap-report.json
+              ZAP_FOUND=true
+            fi
+          fi
+          
+          if [ "$ZAP_FOUND" = false ]; then
             echo "⚠️  Aucun rapport ZAP trouvé, création d'un rapport vide"
+            echo '{"@version":"2.11.0","site":[]}' > reports/dast/zap-report.json
           fi
           
           # Vérifier que le fichier existe et a du contenu
           if [ -f reports/dast/zap-report.json ]; then
+            SIZE=$(wc -c < reports/dast/zap-report.json)
             echo "✅ Rapport DAST sauvegardé: reports/dast/zap-report.json"
-            echo "   Taille: $(wc -c < reports/dast/zap-report.json) bytes"
+            echo "   Taille: $SIZE bytes"
+            if [ "$SIZE" -lt 50 ]; then
+              echo "⚠️  Rapport très petit, peut être vide"
+            fi
+          else
+            echo "❌ ERREUR: Le fichier zap-report.json n'existe pas après sauvegarde!"
+            # Créer un rapport vide en dernier recours
+            echo '{"@version":"2.11.0","site":[]}' > reports/dast/zap-report.json
           fi
         continue-on-error: true
         # Pourquoi : Sauvegarder le rapport ZAP pour l'étape de parsing
