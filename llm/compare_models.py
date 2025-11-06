@@ -10,7 +10,16 @@ from pathlib import Path
 # Ajouter le répertoire parent au path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from llm.policy_generator import PolicyGenerator
+# Import avec gestion du chemin
+try:
+    from llm.policy_generator import PolicyGenerator
+except ImportError:
+    # Fallback si import relatif ne fonctionne pas
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("policy_generator", Path(__file__).parent / "policy_generator.py")
+    policy_gen_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(policy_gen_module)
+    PolicyGenerator = policy_gen_module.PolicyGenerator
 
 
 def generate_with_deepseek(vulnerabilities_file: str = "parser/reports/normalized_vulnerabilities.json"):

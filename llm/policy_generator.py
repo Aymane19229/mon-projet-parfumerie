@@ -10,12 +10,12 @@ from pathlib import Path
 from typing import List, Dict, Optional
 from datetime import datetime
 
-from prompts.nist_csf_prompt import NISTCSFPrompt
-from prompts.iso27001_prompt import ISO27001Prompt
+from .prompts.nist_csf_prompt import NISTCSFPrompt
+from .prompts.iso27001_prompt import ISO27001Prompt
 
 # Import pour la vérification de type
 try:
-    from models.huggingface import HuggingFaceAPI
+    from .models.huggingface import HuggingFaceAPI
 except ImportError:
     HuggingFaceAPI = None
 
@@ -84,21 +84,21 @@ class PolicyGenerator:
         """
         if self.llm_provider == "deepseek":
             # DeepSeek R1 - Recommandé : performant et économique
-            from models.deepseek import DeepSeekLLM
+            from .models.deepseek import DeepSeekLLM
             model = self.model_name or "deepseek-chat"
             self.llm = DeepSeekLLM(model=model)
             print(f"✅ LLM initialisé: DeepSeek {model}")
             
         elif self.llm_provider == "huggingface":
             # Utiliser l'API plutôt que le chargement local (plus simple, pas besoin de GPU)
-            from models.huggingface import HuggingFaceAPI
+            from .models.huggingface import HuggingFaceAPI
             self.llm = HuggingFaceAPI()
             # Note: le modèle sera passé lors de l'appel à generate()
             print(f"✅ LLM initialisé: Hugging Face API")
             
         elif self.llm_provider == "huggingface-local":
             # Option pour charger le modèle localement (nécessite GPU)
-            from models.huggingface import HuggingFaceLLM
+            from .models.huggingface import HuggingFaceLLM
             model = self.model_name or "meta-llama/Meta-Llama-3-8B-Instruct"
             self.llm = HuggingFaceLLM(model_name=model)
             print(f"✅ LLM initialisé: Hugging Face Local {model}")

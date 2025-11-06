@@ -12,10 +12,10 @@ from typing import List, Dict, Optional
 # Ajouter le répertoire parent au path pour les imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from vulnerability_model import Vulnerability, VulnerabilityType
-from parsers.sast_parser import SpotBugsParser, ESLintParser
-from parsers.sca_parser import DependencyCheckParser, NpmAuditParser
-from parsers.dast_parser import ZAPParser
+from .vulnerability_model import Vulnerability, VulnerabilityType
+from .parsers.sast_parser import SpotBugsParser, ESLintParser
+from .parsers.sca_parser import DependencyCheckParser, NpmAuditParser
+from .parsers.dast_parser import ZAPParser
 
 
 class VulnerabilityReportParser:
